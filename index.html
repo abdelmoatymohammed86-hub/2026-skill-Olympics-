@@ -181,7 +181,7 @@
   <div class="credits-logo">RACE TIMER</div>
   <div class="credits-line"></div>
   <div class="credits-made">Application created by</div>
-  <div class="credits-name">Mohamed Moaty</div>
+  <div class="credits-name">Mohamed AbdelMoaty</div>
   <div class="credits-super">Under the supervision of</div>
   <div class="credits-supervisor">Eng. Ahmed Mahdy</div>
 </div>
@@ -298,7 +298,7 @@ const translations = {
     confirmExit:'تأكيد الخروج',
     backToApp:'الرجوع للتطبيق',
     appClosed:'تم إنهاء التطبيق',
-    canCloseNow:'يمكنك إغلاق هذه الصفحة الآن',
+    canCloseNow:'لإعادة فتح التطبيق، ارجع لأيقونته على الشاشة الرئيسية وافتحها من جديد.',
     updateAvailable:'🔄 نسخة جديدة متاحة',
     updateNow:'تحديث الآن',
   },
@@ -331,7 +331,7 @@ const translations = {
     confirmExit:'Confirm Exit',
     backToApp:'Back to App',
     appClosed:'App Closed',
-    canCloseNow:'You can close this page now',
+    canCloseNow:'To reopen the app, go back to its icon on your home screen and open it again.',
     updateAvailable:'🔄 New version available',
     updateNow:'Update Now',
   }
@@ -723,10 +723,10 @@ function openExit(){
 function cancelExit(){ document.getElementById('exitOverlay').classList.remove('show'); }
 function confirmExit(){
   document.getElementById('exitOverlay').classList.remove('show');
-  try{ window.close(); }catch(e){}
-  setTimeout(()=>{
-    document.body.innerHTML = `<div class="goodbye"><div><h2>${t('appClosed')}</h2><p style="color:#9aa4c7">${t('canCloseNow')}</p></div></div>`;
-  }, 300);
+  // Overwrite the current history entry so a stray back-gesture doesn't
+  // land back on the app's running state.
+  try{ history.replaceState(null, '', window.location.href); }catch(e){}
+  document.body.innerHTML = `<div class="goodbye"><div><h2>${t('appClosed')}</h2><p style="color:#9aa4c7; max-width:280px; margin:10px auto 0;">${t('canCloseNow')}</p></div></div>`;
 }
 
 /* ================= ORIENTATION ================= */
