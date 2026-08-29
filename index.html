@@ -97,13 +97,15 @@
   .finish-btn:active{transform:scale(0.96);}
   .finish-btn.stage1{background:rgba(232,185,63,0.9); color:#2a1c00;}
   .done-label{margin-top:8px; text-align:center; color:var(--green); font-weight:800; font-size:12.5px;}
-  .quality-row{display:flex; gap:8px; margin-top:8px;}
-  .quality-row input{
+  .quality-row{display:flex; flex-direction:column; gap:8px; margin-top:8px;}
+  .quality-row select, .quality-row input{
     padding:9px 10px; border-radius:9px; border:1px solid var(--card-border);
     background:#0f1938; color:var(--text); font-size:13px;
   }
-  .quality-input{width:38%; text-align:center;}
+  .quality-select{width:100%;}
+  .comment-pair{display:flex; gap:8px;}
   .comment-input{flex:1;}
+  .deduction-select{width:34%; flex-shrink:0;}
   .export-btn{
     width:100%; padding:14px 0; border-radius:12px; border:none; margin:6px 0 12px;
     background:linear-gradient(160deg, #3ddc97, #1fae74); color:#04220f;
@@ -315,14 +317,15 @@ const translations = {
     canCloseNow:'لإعادة فتح التطبيق، ارجع لأيقونته على الشاشة الرئيسية وافتحها من جديد.',
     updateAvailable:'🔄 نسخة جديدة متاحة',
     updateNow:'تحديث الآن',
-    qualityPlaceholder:'الجودة %',
+    qualityPlaceholder:'اختر نسبة الجودة %',
     commentPlaceholder:'ملاحظات / مشكلة',
+    deductionPlaceholder:'نسبة النقص %',
     exportBtn:'📊 تصدير النتائج Excel',
     colIndex:'#', colPlayer:'اللاعب', colStation:'اللعبة', colAttempts:'عدد المحاولات',
     colAttempt1:'المحاولة 1 (ث)', colAttempt2:'المحاولة 2 (ث)',
     colFinalTime:'الوقت النهائي', colFinalSeconds:'الوقت النهائي (ث)',
     colJapanTime:'رقم اليابان', colDiff:'الفرق عن اليابان (ث)',
-    colRank:'الترتيب', colQuality:'الجودة %', colComment:'ملاحظات / مشكلة',
+    colRank:'الترتيب', colQuality:'الجودة %', colDeduction:'نسبة النقص %', colComment:'ملاحظات / مشكلة',
   },
   en:{
     enter:'ENTER ▶ START RACE',
@@ -356,14 +359,15 @@ const translations = {
     canCloseNow:'To reopen the app, go back to its icon on your home screen and open it again.',
     updateAvailable:'🔄 New version available',
     updateNow:'Update Now',
-    qualityPlaceholder:'Quality %',
+    qualityPlaceholder:'Select Quality %',
     commentPlaceholder:'Notes / Issue',
+    deductionPlaceholder:'Deduction %',
     exportBtn:'📊 Export Results to Excel',
     colIndex:'#', colPlayer:'Player', colStation:'Game', colAttempts:'Attempts',
     colAttempt1:'Attempt 1 (s)', colAttempt2:'Attempt 2 (s)',
     colFinalTime:'Final Time', colFinalSeconds:'Final Time (s)',
     colJapanTime:'Japan Time', colDiff:'Diff vs Japan (s)',
-    colRank:'Rank', colQuality:'Quality %', colComment:'Notes / Issue',
+    colRank:'Rank', colQuality:'Quality %', colDeduction:'Deduction %', colComment:'Notes / Issue',
   }
 };
 function t(key){ return (translations[lang] && translations[lang][key]) || key; }
@@ -414,7 +418,7 @@ let raceStartTs = 0;
 const runtime = {};
 function rtKey(stationId, playerId){ return stationId+'::'+playerId; }
 function freshRT(){
-  return { attempt1Time:null, attempt2StartTs:null, attempt2Time:null, finished:false, finishTime:null, rank:null, provisional:false, quality:'', comment:'' };
+  return { attempt1Time:null, attempt2StartTs:null, attempt2Time:null, finished:false, finishTime:null, rank:null, provisional:false, quality:'', deduction:'', comment:'' };
 }
 function getRT(stationId, playerId){
   const k = rtKey(stationId, playerId);
@@ -548,12 +552,22 @@ function render(){
       }
       actionHtml = `<button class="${cls}" onclick="pressRow(${r.index})">${label}</button>`;
     } else if(rt.finished){
+      let qualityOptions = `<option value="">${t('qualityPlaceholder')}</option>`;
+      for(let q=100; q>=0; q--){
+        qualityOptions += `<option value="${q}" ${String(rt.quality)===String(q)?'selected':''}>${q}%</option>`;
+      }
+      let deductionOptions = `<option value="">${t('deductionPlaceholder')}</option>`;
+      for(let d=0; d<=100; d++){
+        deductionOptions += `<option value="${d}" ${String(rt.deduction)===String(d)?'selected':''}>${d}%</option>`;
+      }
       actionHtml = `<div class="done-label">${t('done')}</div>
         <div class="quality-row">
-          <input type="number" min="0" max="100" class="quality-input" placeholder="${t('qualityPlaceholder')}"
-            value="${rt.quality}" oninput="updateQuality('${r.stationId}','${r.playerId}',this.value)">
-          <input type="text" class="comment-input" placeholder="${t('commentPlaceholder')}"
-            value="${rt.comment}" oninput="updateComment('${r.stationId}','${r.playerId}',this.value)">
+          <select class="quality-select" onchange="updateQuality('${r.stationId}','${r.playerId}',this.value)">${qualityOptions}</select>
+          <div class="comment-pair">
+            <input type="text" class="comment-input" placeholder="${t('commentPlaceholder')}"
+              value="${rt.comment}" oninput="updateComment('${r.stationId}','${r.playerId}',this.value)">
+            <select class="deduction-select" onchange="updateDeduction('${r.stationId}','${r.playerId}',this.value)">${deductionOptions}</select>
+          </div>
         </div>`;
     }
 
@@ -667,6 +681,10 @@ function updateQuality(stationId, playerId, value){
   const rt = getRT(stationId, playerId);
   rt.quality = value;
 }
+function updateDeduction(stationId, playerId, value){
+  const rt = getRT(stationId, playerId);
+  rt.deduction = value;
+}
 function updateComment(stationId, playerId, value){
   const rt = getRT(stationId, playerId);
   rt.comment = value;
@@ -695,13 +713,14 @@ function exportToExcel(){
     row[t('colDiff')] = rt.finished ? Number((rt.finishTime - st.japanTime).toFixed(2)) : '';
     row[t('colRank')] = rankWord;
     row[t('colQuality')] = rt.quality!=='' ? Number(rt.quality) : '';
+    row[t('colDeduction')] = rt.deduction!=='' ? Number(rt.deduction) : '';
     row[t('colComment')] = rt.comment || '';
     return row;
   });
   const ws = XLSX.utils.json_to_sheet(data);
   ws['!cols'] = [
     {wch:4},{wch:14},{wch:22},{wch:10},{wch:14},{wch:14},
-    {wch:14},{wch:16},{wch:14},{wch:16},{wch:10},{wch:12},{wch:30}
+    {wch:14},{wch:16},{wch:14},{wch:16},{wch:10},{wch:12},{wch:12},{wch:30}
   ];
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Results');
@@ -827,6 +846,8 @@ function toggleOrientation(){
 
 /* ================= KEYBOARD ================= */
 document.addEventListener('keydown', (e)=>{
+  const tag = (e.target && e.target.tagName || '').toLowerCase();
+  if(tag === 'input' || tag === 'select' || tag === 'textarea') return;
   if(e.key === 'Enter'){ if(!raceStarted) startRace(); return; }
   if(e.key >= '1' && e.key <= '9'){
     const idx = parseInt(e.key,10);
