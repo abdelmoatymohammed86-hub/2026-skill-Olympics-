@@ -97,6 +97,19 @@
   .finish-btn:active{transform:scale(0.96);}
   .finish-btn.stage1{background:rgba(232,185,63,0.9); color:#2a1c00;}
   .done-label{margin-top:8px; text-align:center; color:var(--green); font-weight:800; font-size:12.5px;}
+  .quality-row{display:flex; gap:8px; margin-top:8px;}
+  .quality-row input{
+    padding:9px 10px; border-radius:9px; border:1px solid var(--card-border);
+    background:#0f1938; color:var(--text); font-size:13px;
+  }
+  .quality-input{width:38%; text-align:center;}
+  .comment-input{flex:1;}
+  .export-btn{
+    width:100%; padding:14px 0; border-radius:12px; border:none; margin:6px 0 12px;
+    background:linear-gradient(160deg, #3ddc97, #1fae74); color:#04220f;
+    font-size:15px; font-weight:800; cursor:pointer;
+  }
+  .export-btn:active{transform:scale(0.98);}
 
   .kbd-hint{text-align:center; color:var(--text-dim); font-size:11px; margin-top:10px;}
 
@@ -172,6 +185,7 @@
   .credits-super{font-size:12px; color:var(--text-dim); letter-spacing:2px; text-transform:uppercase; margin-bottom:8px;}
   .credits-supervisor{font-size:19px; font-weight:800; color:var(--gold-soft);}
 </style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 </head>
 <body>
 
@@ -301,6 +315,14 @@ const translations = {
     canCloseNow:'لإعادة فتح التطبيق، ارجع لأيقونته على الشاشة الرئيسية وافتحها من جديد.',
     updateAvailable:'🔄 نسخة جديدة متاحة',
     updateNow:'تحديث الآن',
+    qualityPlaceholder:'الجودة %',
+    commentPlaceholder:'ملاحظات / مشكلة',
+    exportBtn:'📊 تصدير النتائج Excel',
+    colIndex:'#', colPlayer:'اللاعب', colStation:'اللعبة', colAttempts:'عدد المحاولات',
+    colAttempt1:'المحاولة 1 (ث)', colAttempt2:'المحاولة 2 (ث)',
+    colFinalTime:'الوقت النهائي', colFinalSeconds:'الوقت النهائي (ث)',
+    colJapanTime:'رقم اليابان', colDiff:'الفرق عن اليابان (ث)',
+    colRank:'الترتيب', colQuality:'الجودة %', colComment:'ملاحظات / مشكلة',
   },
   en:{
     enter:'ENTER ▶ START RACE',
@@ -334,6 +356,14 @@ const translations = {
     canCloseNow:'To reopen the app, go back to its icon on your home screen and open it again.',
     updateAvailable:'🔄 New version available',
     updateNow:'Update Now',
+    qualityPlaceholder:'Quality %',
+    commentPlaceholder:'Notes / Issue',
+    exportBtn:'📊 Export Results to Excel',
+    colIndex:'#', colPlayer:'Player', colStation:'Game', colAttempts:'Attempts',
+    colAttempt1:'Attempt 1 (s)', colAttempt2:'Attempt 2 (s)',
+    colFinalTime:'Final Time', colFinalSeconds:'Final Time (s)',
+    colJapanTime:'Japan Time', colDiff:'Diff vs Japan (s)',
+    colRank:'Rank', colQuality:'Quality %', colComment:'Notes / Issue',
   }
 };
 function t(key){ return (translations[lang] && translations[lang][key]) || key; }
@@ -384,7 +414,7 @@ let raceStartTs = 0;
 const runtime = {};
 function rtKey(stationId, playerId){ return stationId+'::'+playerId; }
 function freshRT(){
-  return { attempt1Time:null, attempt2StartTs:null, attempt2Time:null, finished:false, finishTime:null, rank:null, provisional:false };
+  return { attempt1Time:null, attempt2StartTs:null, attempt2Time:null, finished:false, finishTime:null, rank:null, provisional:false, quality:'', comment:'' };
 }
 function getRT(stationId, playerId){
   const k = rtKey(stationId, playerId);
@@ -465,6 +495,10 @@ function render(){
     html += `<button class="enter-btn" onclick="startRace()">${t('enter')}</button>`;
   } else {
     html += `<div class="race-banner ${allDone?'done':''}">${allDone ? t('raceDone') : t('raceRunning')}</div>`;
+    const anyFinished = rows.some(r=> getRT(r.stationId,r.playerId).finished);
+    if(anyFinished){
+      html += `<button class="export-btn" onclick="exportToExcel()">${t('exportBtn')}</button>`;
+    }
   }
 
   rows.forEach((r,i)=>{
@@ -514,7 +548,13 @@ function render(){
       }
       actionHtml = `<button class="${cls}" onclick="pressRow(${r.index})">${label}</button>`;
     } else if(rt.finished){
-      actionHtml = `<div class="done-label">${t('done')}</div>`;
+      actionHtml = `<div class="done-label">${t('done')}</div>
+        <div class="quality-row">
+          <input type="number" min="0" max="100" class="quality-input" placeholder="${t('qualityPlaceholder')}"
+            value="${rt.quality}" oninput="updateQuality('${r.stationId}','${r.playerId}',this.value)">
+          <input type="text" class="comment-input" placeholder="${t('commentPlaceholder')}"
+            value="${rt.comment}" oninput="updateComment('${r.stationId}','${r.playerId}',this.value)">
+        </div>`;
     }
 
     const rowClass = 'prow' + (rt.finished?' finished':'') + (r.sameGroup?' same-game':'');
@@ -620,6 +660,53 @@ function restartRace(){
   resetRuntime();
   if(tickInterval){ clearInterval(tickInterval); tickInterval=null; }
   render();
+}
+
+/* ================= QUALITY / COMMENT (no full re-render, to keep input focus) ================= */
+function updateQuality(stationId, playerId, value){
+  const rt = getRT(stationId, playerId);
+  rt.quality = value;
+}
+function updateComment(stationId, playerId, value){
+  const rt = getRT(stationId, playerId);
+  rt.comment = value;
+}
+
+/* ================= EXCEL EXPORT ================= */
+function exportToExcel(){
+  if(typeof XLSX === 'undefined'){
+    alert(lang==='ar' ? 'تعذّر تحميل مكتبة Excel — تأكد إنك متصل بالإنترنت وجرّب تاني.' : 'Could not load the Excel library — make sure you are online and try again.');
+    return;
+  }
+  const data = rows.map(r=>{
+    const st = getStation(r.stationId);
+    const rt = getRT(r.stationId, r.playerId);
+    const rankWord = rt.rank===1?t('r1'):(rt.rank===2?t('r2'):(rt.rank===3?t('r3'):''));
+    const row = {};
+    row[t('colIndex')] = r.index;
+    row[t('colPlayer')] = r.playerName;
+    row[t('colStation')] = r.stationName;
+    row[t('colAttempts')] = st.stages;
+    row[t('colAttempt1')] = rt.attempt1Time!==null ? Number(rt.attempt1Time.toFixed(2)) : '';
+    row[t('colAttempt2')] = rt.attempt2Time!==null ? Number(rt.attempt2Time.toFixed(2)) : '';
+    row[t('colFinalTime')] = rt.finished ? fmtTime(rt.finishTime) : '';
+    row[t('colFinalSeconds')] = rt.finished ? Number(rt.finishTime.toFixed(2)) : '';
+    row[t('colJapanTime')] = fmtTime(st.japanTime);
+    row[t('colDiff')] = rt.finished ? Number((rt.finishTime - st.japanTime).toFixed(2)) : '';
+    row[t('colRank')] = rankWord;
+    row[t('colQuality')] = rt.quality!=='' ? Number(rt.quality) : '';
+    row[t('colComment')] = rt.comment || '';
+    return row;
+  });
+  const ws = XLSX.utils.json_to_sheet(data);
+  ws['!cols'] = [
+    {wch:4},{wch:14},{wch:22},{wch:10},{wch:14},{wch:14},
+    {wch:14},{wch:16},{wch:14},{wch:16},{wch:10},{wch:12},{wch:30}
+  ];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Results');
+  const stamp = new Date().toISOString().slice(0,19).replace(/[:T]/g,'-');
+  XLSX.writeFile(wb, `race-results-${stamp}.xlsx`);
 }
 
 function ensureTicker(){
