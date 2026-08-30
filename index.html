@@ -30,7 +30,7 @@
   }
   .app{max-width:560px; margin:0 auto; padding:14px 12px 10px;}
 
-  /* landscape hack */
+  /* landscape hack — for narrow mobile screens only */
   body.landscape-mode{overflow:hidden;}
   body.landscape-mode .app{
     position:fixed; top:0; left:0;
@@ -39,6 +39,15 @@
     transform-origin:top left;
     overflow-y:auto; max-width:none;
   }
+
+  /* wide mode — for PC / laptop / tablet screens: use the extra width
+     instead of rotating (rotating a screen that's already wide breaks it) */
+  body.wide-mode .app{ max-width:1500px; }
+  body.wide-mode #rowsList{
+    display:grid; grid-template-columns:repeat(auto-fit, minmax(430px,1fr));
+    gap:12px; align-items:start;
+  }
+  body.wide-mode .row-divider{ display:none; }
 
   .topbar{display:flex; align-items:center; justify-content:space-between; gap:6px; margin-bottom:6px;}
   h1.title{font-size:19px; letter-spacing:1px; font-weight:900; margin:0; flex:1; text-align:center;}
@@ -187,7 +196,7 @@
   .credits-super{font-size:12px; color:var(--text-dim); letter-spacing:2px; text-transform:uppercase; margin-bottom:8px;}
   .credits-supervisor{font-size:19px; font-weight:800; color:var(--gold-soft);}
 </style>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
 </head>
 <body>
 
@@ -505,6 +514,7 @@ function render(){
     }
   }
 
+  html += `<div id="rowsList">`;
   rows.forEach((r,i)=>{
     const st = getStation(r.stationId);
     const rt = getRT(r.stationId, r.playerId);
@@ -597,6 +607,7 @@ function render(){
     }
   });
 
+  html += `</div>`;
   html += `<div class="kbd-hint">${t('kbdHint')}</div>`;
 
   app.innerHTML = html;
@@ -691,41 +702,120 @@ function updateComment(stationId, playerId, value){
 }
 
 /* ================= EXCEL EXPORT ================= */
-function exportToExcel(){
-  if(typeof XLSX === 'undefined'){
+// Always exports in English, with professional formatting, regardless of
+// the app's current display language.
+const EXCEL_HEADERS = [
+  '#','Player','Game','Attempts','Attempt 1 (s)','Attempt 2 (s)',
+  'Final Time','Final Time (s)','Japan Time','Diff vs Japan (s)',
+  'Rank','Quality %','Deduction %','Notes / Issue'
+];
+const EXCEL_COL_WIDTHS = [5,16,22,11,13,13,13,14,12,15,10,11,12,34];
+// distinct pastel fill per station; a station with 2 players alternates
+// between the two shades so each player row is still visually separable
+const EXCEL_STATION_COLORS = {
+  'assembly1':      ['FFF7E4B0','FFD7E8F7'],
+  'cc-inspect':     ['FFFFFFFF'],
+  'visual':         ['FFFFFFFF'],
+  'assembly-maint': ['FFF8CBAD'],
+  'cc-maint':       ['FFC6E0B4'],
+};
+const THIN_BORDER = { style:'thin', color:{argb:'FFB9C2D9'} };
+
+async function exportToExcel(){
+  if(typeof ExcelJS === 'undefined'){
     alert(lang==='ar' ? 'تعذّر تحميل مكتبة Excel — تأكد إنك متصل بالإنترنت وجرّب تاني.' : 'Could not load the Excel library — make sure you are online and try again.');
     return;
   }
-  const data = rows.map(r=>{
+  const wb = new ExcelJS.Workbook();
+  wb.creator = 'RACE TIMER';
+  wb.created = new Date();
+  const ws = wb.addWorksheet('Results', {
+    views: [{ state:'frozen', ySplit: 3 }]
+  });
+
+  ws.columns = EXCEL_COL_WIDTHS.map(w=>({ width:w }));
+
+  // ---- title banner ----
+  ws.mergeCells(1,1,1,EXCEL_HEADERS.length);
+  const title = ws.getCell(1,1);
+  title.value = 'RACE TIMER — Official Results';
+  title.font = { name:'Calibri', size:16, bold:true, color:{argb:'FF0A1128'} };
+  title.alignment = { horizontal:'center', vertical:'middle' };
+  title.fill = { type:'pattern', pattern:'solid', fgColor:{argb:'FFE8B93F'} };
+  ws.getRow(1).height = 28;
+
+  // ---- subtitle (export timestamp) ----
+  ws.mergeCells(2,1,2,EXCEL_HEADERS.length);
+  const subtitle = ws.getCell(2,1);
+  const now = new Date();
+  subtitle.value = 'Exported: ' + now.toLocaleString('en-US');
+  subtitle.font = { name:'Calibri', size:10, italic:true, color:{argb:'FF5B6690'} };
+  subtitle.alignment = { horizontal:'center', vertical:'middle' };
+  ws.getRow(2).height = 18;
+
+  // ---- header row ----
+  const headerRow = ws.getRow(3);
+  EXCEL_HEADERS.forEach((h, i)=>{
+    const cell = headerRow.getCell(i+1);
+    cell.value = h;
+    cell.font = { name:'Calibri', size:11, bold:true, color:{argb:'FFFFFFFF'} };
+    cell.fill = { type:'pattern', pattern:'solid', fgColor:{argb:'FF0A1128'} };
+    cell.alignment = { horizontal:'center', vertical:'middle', wrapText:true };
+    cell.border = { top:THIN_BORDER, bottom:THIN_BORDER, left:THIN_BORDER, right:THIN_BORDER };
+  });
+  headerRow.height = 26;
+  ws.autoFilter = { from:{row:3,column:1}, to:{row:3,column:EXCEL_HEADERS.length} };
+
+  // ---- data rows ----
+  rows.forEach((r, idx)=>{
     const st = getStation(r.stationId);
     const rt = getRT(r.stationId, r.playerId);
-    const rankWord = rt.rank===1?t('r1'):(rt.rank===2?t('r2'):(rt.rank===3?t('r3'):''));
-    const row = {};
-    row[t('colIndex')] = r.index;
-    row[t('colPlayer')] = r.playerName;
-    row[t('colStation')] = r.stationName;
-    row[t('colAttempts')] = st.stages;
-    row[t('colAttempt1')] = rt.attempt1Time!==null ? Number(rt.attempt1Time.toFixed(2)) : '';
-    row[t('colAttempt2')] = rt.attempt2Time!==null ? Number(rt.attempt2Time.toFixed(2)) : '';
-    row[t('colFinalTime')] = rt.finished ? fmtTime(rt.finishTime) : '';
-    row[t('colFinalSeconds')] = rt.finished ? Number(rt.finishTime.toFixed(2)) : '';
-    row[t('colJapanTime')] = fmtTime(st.japanTime);
-    row[t('colDiff')] = rt.finished ? Number((rt.finishTime - st.japanTime).toFixed(2)) : '';
-    row[t('colRank')] = rankWord;
-    row[t('colQuality')] = rt.quality!=='' ? Number(rt.quality) : '';
-    row[t('colDeduction')] = rt.deduction!=='' ? Number(rt.deduction) : '';
-    row[t('colComment')] = rt.comment || '';
-    return row;
+    const rankWord = rt.rank===1 ? '1st' : (rt.rank===2 ? '2nd' : (rt.rank===3 ? '3rd' : ''));
+    const sameStationRows = rows.filter(x=>x.stationId===r.stationId);
+    const playerIdxInStation = sameStationRows.indexOf(r);
+    const palette = EXCEL_STATION_COLORS[r.stationId] || ['FFFFFFFF'];
+    const fillColor = palette[playerIdxInStation % palette.length];
+
+    const values = [
+      r.index,
+      r.playerName,
+      r.stationName,
+      st.stages,
+      rt.attempt1Time!==null ? Number(rt.attempt1Time.toFixed(2)) : '',
+      rt.attempt2Time!==null ? Number(rt.attempt2Time.toFixed(2)) : '',
+      rt.finished ? fmtTime(rt.finishTime) : '',
+      rt.finished ? Number(rt.finishTime.toFixed(2)) : '',
+      fmtTime(st.japanTime),
+      rt.finished ? Number((rt.finishTime - st.japanTime).toFixed(2)) : '',
+      rankWord,
+      rt.quality!=='' ? Number(rt.quality) : '',
+      rt.deduction!=='' ? Number(rt.deduction) : '',
+      rt.comment || ''
+    ];
+
+    const excelRow = ws.getRow(4+idx);
+    values.forEach((v, i)=>{
+      const cell = excelRow.getCell(i+1);
+      cell.value = v;
+      cell.font = { name:'Calibri', size:10.5, color:{argb:'FF1B2340'}, bold:(i===1) };
+      cell.fill = { type:'pattern', pattern:'solid', fgColor:{argb:fillColor} };
+      cell.border = { top:THIN_BORDER, bottom:THIN_BORDER, left:THIN_BORDER, right:THIN_BORDER };
+      cell.alignment = { horizontal: (i===13 ? 'left' : 'center'), vertical:'middle', wrapText:(i===13) };
+    });
+    excelRow.height = 20;
   });
-  const ws = XLSX.utils.json_to_sheet(data);
-  ws['!cols'] = [
-    {wch:4},{wch:14},{wch:22},{wch:10},{wch:14},{wch:14},
-    {wch:14},{wch:16},{wch:14},{wch:16},{wch:10},{wch:12},{wch:12},{wch:30}
-  ];
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, 'Results');
+
+  const buf = await wb.xlsx.writeBuffer();
+  const blob = new Blob([buf], { type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  const url = URL.createObjectURL(blob);
   const stamp = new Date().toISOString().slice(0,19).replace(/[:T]/g,'-');
-  XLSX.writeFile(wb, `race-results-${stamp}.xlsx`);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `race-results-${stamp}.xlsx`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
 }
 
 function ensureTicker(){
@@ -833,10 +923,22 @@ function confirmExit(){
   // land back on the app's running state.
   try{ history.replaceState(null, '', window.location.href); }catch(e){}
   document.body.innerHTML = `<div class="goodbye"><div><h2>${t('appClosed')}</h2><p style="color:#9aa4c7; max-width:280px; margin:10px auto 0;">${t('canCloseNow')}</p></div></div>`;
+  // Browsers only allow a script to close a window/tab it opened itself
+  // (a security restriction, not something this app can override). This
+  // will silently do nothing in a normal browser tab, but can succeed
+  // when running as an installed standalone app.
+  try{ window.close(); }catch(e){}
 }
 
 /* ================= ORIENTATION ================= */
 function toggleOrientation(){
+  const isDesktop = window.innerWidth >= 820;
+  if(isDesktop){
+    // Rotating an already-wide screen breaks the layout — use the extra
+    // width for a multi-column grid instead.
+    document.body.classList.toggle('wide-mode');
+    return;
+  }
   document.body.classList.toggle('landscape-mode');
   if(screen.orientation && screen.orientation.lock){
     const isLandscape = document.body.classList.contains('landscape-mode');
