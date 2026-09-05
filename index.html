@@ -572,11 +572,11 @@ function render(){
       }
       actionHtml = `<div class="done-label">${t('done')}</div>
         <div class="quality-row">
-          <select class="quality-select" onchange="updateQuality('${r.stationId}','${r.playerId}',this.value)">${qualityOptions}</select>
+          <select class="quality-select" id="quality-${r.stationId}-${r.playerId}" onchange="updateQuality('${r.stationId}','${r.playerId}',this.value)">${qualityOptions}</select>
           <div class="comment-pair">
             <input type="text" class="comment-input" placeholder="${t('commentPlaceholder')}"
               value="${rt.comment}" oninput="updateComment('${r.stationId}','${r.playerId}',this.value)">
-            <select class="deduction-select" onchange="updateDeduction('${r.stationId}','${r.playerId}',this.value)">${deductionOptions}</select>
+            <select class="deduction-select" id="deduction-${r.stationId}-${r.playerId}" onchange="updateDeduction('${r.stationId}','${r.playerId}',this.value)">${deductionOptions}</select>
           </div>
         </div>`;
     }
@@ -691,10 +691,22 @@ function restartRace(){
 function updateQuality(stationId, playerId, value){
   const rt = getRT(stationId, playerId);
   rt.quality = value;
+  if(value !== ''){
+    const dedVal = 100 - Number(value);
+    rt.deduction = String(dedVal);
+    const dedEl = document.getElementById('deduction-'+stationId+'-'+playerId);
+    if(dedEl) dedEl.value = String(dedVal);
+  }
 }
 function updateDeduction(stationId, playerId, value){
   const rt = getRT(stationId, playerId);
   rt.deduction = value;
+  if(value !== ''){
+    const qualVal = 100 - Number(value);
+    rt.quality = String(qualVal);
+    const qualEl = document.getElementById('quality-'+stationId+'-'+playerId);
+    if(qualEl) qualEl.value = String(qualVal);
+  }
 }
 function updateComment(stationId, playerId, value){
   const rt = getRT(stationId, playerId);
