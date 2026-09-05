@@ -1,6 +1,6 @@
 {
-  "name": "RACE TIMER",
-  "short_name": "RACE TIMER",
+  "name": "Olympic Skill Timer",
+  "short_name": "Skill Timer",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
